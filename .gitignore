@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.hypothesis/
+.pytest_cache/
+
+# CDK
+cdk.out/
+cdk.context.json
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# IDE
+.vscode/
+.idea/
+
+# Kiro
+.kiro/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+*.env.local
+
+# Secrets / keys
+*.pem
+*.key
+*.p12
+
+# Lambda layer (built locally)
+/tmp/boto3-layer/

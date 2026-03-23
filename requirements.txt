@@ -1,0 +1,8 @@
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit
+strands-agents>=1.0.0
+strands-agents-tools>=0.1.0
+boto3>=1.35.0
+requests>=2.31.0
+mcp>=1.0.0
+aws-opentelemetry-distro==0.10.1
