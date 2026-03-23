@@ -139,7 +139,6 @@ bash deploy.sh --destroy
 │   ├── entitlement_service/
 │   └── pre_token_generation/
 ├── scripts/                # Seed data + runtime update utility
-├── .kiro/steering/         # Kiro steering files (coding standards, architecture)
 ├── deploy.sh               # One-click deploy orchestrator
 ├── Dockerfile              # Agent container
 ├── requirements.txt        # Container dependencies
