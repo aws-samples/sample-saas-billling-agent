@@ -11,6 +11,8 @@ Deploy: cdk deploy
 Destroy: cdk destroy --force
 """
 
+import os
+
 import aws_cdk as cdk
 from aws_cdk import (
     aws_bedrockagentcore as agentcore,
@@ -232,8 +234,10 @@ class UnifiedStack(cdk.Stack):
 
         # ── 8. OAuth2 Credential Provider (Custom Resource) ─────────
         # Lambda layer with latest boto3 (Lambda runtime's bundled version is too old for AgentCore APIs)
+        # Layer is built from .layers/boto3/python/ — run: pip install boto3 botocore -t .layers/boto3/python
+        boto3_layer_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".layers", "boto3")
         boto3_layer = _lambda.LayerVersion(self, "Boto3Layer",
-            code=_lambda.Code.from_asset("/tmp/boto3-layer"),
+            code=_lambda.Code.from_asset(boto3_layer_path),
             compatible_runtimes=[_lambda.Runtime.PYTHON_3_12],
             description="Latest boto3/botocore for AgentCore control plane APIs")
 

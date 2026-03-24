@@ -43,8 +43,8 @@ Browser (React) → CloudFront/S3 → Cognito Auth → AgentCore Runtime (Docker
 pip install -r requirements-cdk.txt
 
 # 2. Build boto3 Lambda layer (required for AgentCore Policy APIs)
-mkdir -p /tmp/boto3-layer/python
-pip install boto3 botocore -t /tmp/boto3-layer/python
+mkdir -p .layers/boto3/python
+pip install boto3 botocore -t .layers/boto3/python
 
 # 3. Deploy everything
 bash deploy.sh --seed

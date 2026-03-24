@@ -19,6 +19,9 @@ frontend/.env
 .vscode/
 .idea/
 
+# Lambda layer (build artifact)
+.layers/
+
 # Kiro
 .kiro/
 
@@ -34,6 +37,3 @@ Thumbs.db
 *.pem
 *.key
 *.p12
-
-# Lambda layer (built locally)
-/tmp/boto3-layer/

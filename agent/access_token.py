@@ -34,12 +34,12 @@ def _get_token_via_identity() -> str | None:
             scopes=[scope],
             auth_flow="M2M",
         )
-        def _fetch(access_token: str = ""):
+        def _fetch(access_token: str = None):  # noqa: B107
             return access_token
 
         token = _fetch()
         if token:
-            logger.info("Got token via AgentCore Identity (provider=%s)", provider_name)
+            logger.info("Got token via AgentCore Identity (provider=%s)", provider_name)  # nosemgrep: python-logger-credential-disclosure
             return token
     except ValueError as e:
         if "Workload access token has not been set" in str(e):
@@ -62,7 +62,7 @@ def _resolve_client_secret() -> str:
             sm = boto3.client("secretsmanager")
             return sm.get_secret_value(SecretId=secret_arn)["SecretString"]
         except Exception as e:
-            logger.warning("Failed to read secret from Secrets Manager: %s", e)
+            logger.warning("Secrets Manager read error: %s", type(e).__name__)  # nosemgrep: python-logger-credential-disclosure
     logger.warning("Client secret not available from Secrets Manager")
     return ""
 
@@ -100,7 +100,7 @@ def _get_token_via_cognito() -> str | None:
         logger.info("Got token via direct Cognito client_credentials")
         return token
     except Exception as e:
-        logger.error("Failed to get Cognito token: %s", e)
+        logger.error("Cognito token request failed: %s", type(e).__name__)  # nosemgrep: python-logger-credential-disclosure
         return None
 
 
