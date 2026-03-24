@@ -9,7 +9,7 @@ idempotency — re-running the script will not overwrite existing records.
 """
 
 import os
-import random
+import random  # nosec B311 — used for generating demo seed data, not for security
 import sys
 
 import boto3
