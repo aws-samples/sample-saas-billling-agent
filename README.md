@@ -1,5 +1,7 @@
 # SaaS Billing Agent
 
+>DISCLAIMER: This code is provided as a sample for educational and testing purposes only. Users must perform their own security review and due diligence before deploying any code to production environments. The code provided represents a baseline implementation and may not address all security considerations for your specific environment.
+
 A multi-tenant SaaS billing agent built on **Amazon Bedrock AgentCore**. Tenants interact through a chat interface to query API usage, manage invoices, check entitlements, and get plan recommendations — all powered by Claude on Bedrock.
 
 ## Architecture
