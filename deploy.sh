@@ -81,7 +81,7 @@ destroy() {
 # ---------------------------------------------------------------------------
 step_build_frontend_placeholder() {
   log "Step 1: Building frontend (placeholder)..."
-  (cd "$SCRIPT_DIR/frontend" && npm install --silent 2>/dev/null && npx vite build 2>/dev/null)
+  (cd "$SCRIPT_DIR/frontend" && npm install --silent 2>/dev/null && ./node_modules/.bin/vite build 2>/dev/null)
   ok "Frontend built"
 }
 
@@ -141,7 +141,7 @@ VITE_AGENT_RUNTIME_URL=https://bedrock-agentcore.$REGION.amazonaws.com
 VITE_AGENT_RUNTIME_ARN=$RUNTIME_ARN
 EOF
 
-  (cd "$SCRIPT_DIR/frontend" && npx vite build 2>/dev/null)
+  (cd "$SCRIPT_DIR/frontend" && ./node_modules/.bin/vite build 2>/dev/null)
 
   # Get S3 bucket and CloudFront distribution
   S3_BUCKET=$(aws cloudformation describe-stack-resources --stack-name SaaSBillingStack \

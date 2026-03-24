@@ -32,12 +32,15 @@ NagSuppressions.add_stack_suppressions(stack, [
     {"id": "AwsSolutions-L1", "reason": "Python 3.12 is the latest supported Lambda runtime for AgentCore SDK"},
     {"id": "AwsSolutions-CB4", "reason": "CodeBuild encryption not required for demo container builds"},
     {"id": "AwsSolutions-S1", "reason": "S3 access logging not required for demo frontend bucket"},
+    {"id": "AwsSolutions-S10", "reason": "S3 SSL-only policy not required for demo (CloudFront enforces HTTPS)"},
     {"id": "AwsSolutions-CFR1", "reason": "CloudFront geo restrictions not required for demo"},
     {"id": "AwsSolutions-CFR2", "reason": "CloudFront WAF not required for demo"},
+    {"id": "AwsSolutions-CFR3", "reason": "CloudFront access logging not required for demo"},
     {"id": "AwsSolutions-CFR4", "reason": "CloudFront custom SSL certificate not required for demo"},
     {"id": "AwsSolutions-COG1", "reason": "Cognito advanced password policy not required for demo"},
     {"id": "AwsSolutions-COG2", "reason": "Cognito MFA not required for demo"},
     {"id": "AwsSolutions-COG3", "reason": "Cognito AdvancedSecurityMode not required for demo"},
+    {"id": "AwsSolutions-SMG4", "reason": "Secrets Manager auto-rotation not required for demo M2M client secret"},
 ])
 
 app.synth()

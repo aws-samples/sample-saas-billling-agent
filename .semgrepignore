@@ -1,0 +1,8 @@
+# Semgrep ignore patterns
+# jsx-not-internationalized warnings are acceptable for this English-only demo app
+# The rule is suppressed at the project level rather than inline comments
+# (JSX comments inside ternary expressions break esbuild)
+node_modules/
+cdk.out/
+.layers/
+frontend/dist/
