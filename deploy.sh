@@ -68,13 +68,144 @@ preflight() {
 # ---------------------------------------------------------------------------
 destroy() {
   log "Destroying all resources..."
-  log "Destroying CDK stack (includes all AgentCore resources)..."
-  cdk destroy --force 2>/dev/null || warn "CDK stack not found"
+
+  # Build prerequisites so CDK synth works
+  mkdir -p "$SCRIPT_DIR/.layers/boto3/python"
+  pip3 install boto3 botocore -t "$SCRIPT_DIR/.layers/boto3/python" --quiet --upgrade 2>/dev/null || true
+  (cd "$SCRIPT_DIR/frontend" && npm install --silent 2>/dev/null && ./node_modules/.bin/vite build 2>/dev/null) || true
+  rm -rf "$SCRIPT_DIR/cdk.out"
+
+  # Pre-clean: remove policies, detach policy engine, delete code interpreter
+  log "Pre-cleaning AgentCore resources..."
+  python3 -c "
+import boto3, time
+region='$REGION'
+cfn=boto3.client('cloudformation',region_name=region)
+try:
+    stack=cfn.describe_stacks(StackName='SaaSBillingStack')['Stacks'][0]
+    outs={o['OutputKey']:o['OutputValue'] for o in stack.get('Outputs',[])}
+    status=stack['StackStatus']
+except Exception:
+    print('  Stack not found — nothing to clean'); exit(0)
+ac=boto3.client('bedrock-agentcore-control',region_name=region)
+
+# 1. Delete policies
+pe=outs.get('PolicyEngineId','')
+if pe:
+    try:
+        for p in ac.list_policies(policyEngineId=pe).get('policies',[]):
+            ac.delete_policy(policyEngineId=pe,policyId=p['policyId']); print(f'  Deleted policy {p[\"policyId\"]}')
+    except Exception as e: print(f'  Policy cleanup: {type(e).__name__}')
+
+# 2. Detach policy engine from gateway
+gw=outs.get('GatewayId','')
+if gw:
+    try:
+        g=ac.get_gateway(gatewayIdentifier=gw)
+        if g.get('policyEngineConfiguration'):
+            ac.update_gateway(gatewayIdentifier=gw,name=g['name'],roleArn=g['roleArn'],protocolType=g['protocolType'],authorizerType=g['authorizerType'],authorizerConfiguration=g.get('authorizerConfiguration',{}))
+            print('  Detached policy engine from gateway')
+    except Exception as e: print(f'  Gateway cleanup: {type(e).__name__}')
+
+# 3. Delete code interpreter (prevents DELETE_FAILED on CFN retry)
+ci=outs.get('CodeInterpreterId','')
+if ci:
+    try:
+        ac.delete_code_interpreter(codeInterpreterId=ci)
+        print(f'  Deleted code interpreter {ci}')
+    except Exception as e: print(f'  Code interpreter cleanup: {type(e).__name__}')
+
+# 4. Delete OAuth2 credential provider (Custom Resource may not fire if stack is stuck)
+try:
+    ac.delete_oauth2_credential_provider(name='SaaSBillingCredentialProvider')
+    print('  Deleted credential provider SaaSBillingCredentialProvider')
+except Exception as e: print(f'  Credential provider cleanup: {type(e).__name__}')
+
+print('  Pre-clean done')
+" || true
+
+  log "Destroying CDK stack..."
+  cdk destroy --force || true
+
+  # Handle DELETE_FAILED — retry after cleaning stuck resources
+  log "Checking stack status..."
+  python3 -c "
+import boto3, time, sys
+region='$REGION'
+cfn=boto3.client('cloudformation',region_name=region)
+ac=boto3.client('bedrock-agentcore-control',region_name=region)
+
+for attempt in range(3):
+    try:
+        stack=cfn.describe_stacks(StackName='SaaSBillingStack')['Stacks'][0]
+        status=stack['StackStatus']
+    except Exception:
+        print('  Stack deleted successfully'); sys.exit(0)
+
+    if status in ('DELETE_COMPLETE',):
+        print('  Stack deleted successfully'); sys.exit(0)
+
+    if status == 'DELETE_FAILED':
+        print(f'  Attempt {attempt+1}: Stack in DELETE_FAILED — cleaning stuck resources...')
+        # Find which resources failed
+        resources=cfn.describe_stack_resources(StackName='SaaSBillingStack')['StackResources']
+        failed=[r for r in resources if r['ResourceStatus']=='DELETE_FAILED']
+        for r in failed:
+            rid=r.get('PhysicalResourceId','')
+            rtype=r['ResourceType']
+            print(f'    Stuck: {r[\"LogicalResourceId\"]} ({rtype}) = {rid}')
+            # Delete code interpreter if that's what's stuck
+            if 'CodeInterpreter' in rtype and rid:
+                try:
+                    ac.delete_code_interpreter(codeInterpreterId=rid)
+                    print(f'    Manually deleted code interpreter: {rid}')
+                except Exception as e:
+                    print(f'    Already gone or error: {type(e).__name__}')
+
+        # Retry stack deletion
+        print('  Retrying stack deletion...')
+        cfn.delete_stack(StackName='SaaSBillingStack')
+        # Wait for deletion
+        for i in range(60):
+            time.sleep(10)
+            try:
+                s=cfn.describe_stacks(StackName='SaaSBillingStack')['Stacks'][0]['StackStatus']
+                if s=='DELETE_COMPLETE': print('  Stack deleted successfully'); sys.exit(0)
+                if s=='DELETE_FAILED': break
+                print(f'    Status: {s}...')
+            except Exception:
+                print('  Stack deleted successfully'); sys.exit(0)
+    elif status.endswith('_IN_PROGRESS'):
+        print(f'  Stack is {status}, waiting...')
+        time.sleep(15)
+    else:
+        print(f'  Unexpected status: {status}'); sys.exit(1)
+
+print('  WARNING: Stack may still exist after 3 attempts')
+sys.exit(1)
+" || fail "Could not fully delete stack"
+
   ok "All resources destroyed."
   exit 0
 }
 
 [ "$DESTROY" = true ] && destroy
+
+# ---------------------------------------------------------------------------
+# Step 0: Build prerequisites
+# ---------------------------------------------------------------------------
+step_prerequisites() {
+  log "Step 0: Building prerequisites..."
+
+  # Build boto3 Lambda layer (required for AgentCore Policy APIs)
+  mkdir -p "$SCRIPT_DIR/.layers/boto3/python"
+  pip3 install boto3 botocore -t "$SCRIPT_DIR/.layers/boto3/python" --quiet --upgrade 2>/dev/null
+  ok "boto3 Lambda layer built"
+
+  # Clear CDK cache to ensure source changes are detected
+  rm -rf "$SCRIPT_DIR/cdk.out"
+  ok "CDK cache cleared"
+}
 
 # ---------------------------------------------------------------------------
 # Step 1: Build frontend (placeholder — will rebuild with real config later)
@@ -202,6 +333,7 @@ print_summary() {
 # ---------------------------------------------------------------------------
 main() {
   preflight
+  step_prerequisites
   step_build_frontend_placeholder
   step_cdk_deploy
   step_verify_iam

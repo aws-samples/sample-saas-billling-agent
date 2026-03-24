@@ -455,6 +455,7 @@ class UnifiedStack(cdk.Stack):
             description="SaaS Billing Agent")
         runtime.node.add_dependency(trigger_build)
         runtime.node.add_dependency(cred_provider)
+        runtime.node.add_dependency(gateway)
 
         # Note: AgentCore automatically creates a DEFAULT endpoint.
         # No need to create an additional one.
