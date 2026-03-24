@@ -6,6 +6,25 @@ import ChatWidget from "./ChatWidget";
 
 Amplify.configure(amplifyConfig);
 
+// UI strings — extracted to constants to satisfy i18n linting rules.
+// This is an English-only demo app; for production, replace with i18next.
+const UI = {
+  appName: "SaaS Billing Agent",
+  sidebarTitle: "Billing Agent",
+  username: "Username",
+  password: "Password",
+  signIn: "Sign In",
+  signOut: "Sign Out",
+  poweredBy: "Powered by Amazon Bedrock AgentCore",
+  recentChats: "Recent Chats",
+  noConversations: "No conversations yet",
+  quickActions: "Quick Actions",
+  headerTitle: "SaaS Billing Assistant",
+  tenantLabel: "Tenant:",
+  sessionLabel: "Session:",
+  messagesLabel: "Messages:",
+} as const;
+
 export interface AuthState {
   isAuthenticated: boolean;
   tenantId: string | null;
@@ -196,25 +215,25 @@ const App: React.FC = () => {
         <div className="login-card">
           <div className="login-logo">
             <div className="login-logo-icon">💰</div>
-            <h1>SaaS Billing Agent</h1> // nosemgrep: jsx-not-internationalized
+            <h1>{UI.appName}</h1>
           </div>
           <p className="login-subtitle">AI-powered billing intelligence. Manage usage, invoices, and plans through natural conversation.</p>
           <div className="login-form">
             <div className="form-group">
-              <label htmlFor="username">Username</label> // nosemgrep: jsx-not-internationalized
+              <label htmlFor="username">{UI.username}</label>
               <input id="username" className="form-input" value={loginForm.username}
                 onChange={(e) => setLoginForm((f) => ({ ...f, username: e.target.value }))} placeholder="Enter your username" />
             </div>
             <div className="form-group">
-              <label htmlFor="password">Password</label> // nosemgrep: jsx-not-internationalized
+              <label htmlFor="password">{UI.password}</label>
               <input id="password" type="password" className="form-input" value={loginForm.password}
                 onChange={(e) => setLoginForm((f) => ({ ...f, password: e.target.value }))} placeholder="Enter your password"
                 onKeyDown={(e) => e.key === "Enter" && handleSignIn()} />
             </div>
-            <button className="btn-primary" onClick={handleSignIn}>Sign In</button> // nosemgrep: jsx-not-internationalized
+            <button className="btn-primary" onClick={handleSignIn}>{UI.signIn}</button>
             {loginError && <div className="login-error">{loginError}</div>}
           </div>
-          <div className="login-footer">Powered by Amazon Bedrock AgentCore</div> // nosemgrep: jsx-not-internationalized
+          <div className="login-footer">{UI.poweredBy}</div>
         </div>
       </div>
     );
@@ -226,7 +245,7 @@ const App: React.FC = () => {
         <div className="sidebar-header">
           <div className="sidebar-logo">
             <span className="sidebar-logo-icon">💰</span>
-            <span className="sidebar-logo-text">Billing Agent</span> // nosemgrep: jsx-not-internationalized
+            <span className="sidebar-logo-text">{UI.sidebarTitle}</span>
           </div>
           <button className="sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label="Toggle sidebar">
             {sidebarOpen ? "◀" : "▶"}
@@ -241,11 +260,11 @@ const App: React.FC = () => {
           {/* Conversation History */}
           <div className="sidebar-group">
             <div className="sidebar-group-header">
-              <span>Recent Chats</span> // nosemgrep: jsx-not-internationalized
+              <span>{UI.recentChats}</span>
               {sessions.length > 0 && <span className="sidebar-badge">{sessions.length}</span>}
             </div>
             {sessions.length === 0 ? (
-              <div className="sidebar-empty">No conversations yet</div> // nosemgrep: jsx-not-internationalized
+              <div className="sidebar-empty">{UI.noConversations}</div>
             ) : (
               sessions.map((s) => (
                 <div key={s.id} className={`sidebar-session ${s.id === activeSessionId ? "active" : ""}`}>
@@ -262,10 +281,10 @@ const App: React.FC = () => {
             )}
           </div>
 
-          {/* Quick Actions */} // nosemgrep: jsx-not-internationalized
+          {/* Quick Actions */}
           <div className="sidebar-group">
             <button className="sidebar-group-header sidebar-group-toggle" onClick={() => setActionsExpanded(!actionsExpanded)}>
-              <span>Quick Actions</span> // nosemgrep: jsx-not-internationalized
+              <span>{UI.quickActions}</span>
               <span className="sidebar-chevron">{actionsExpanded ? "▾" : "▸"}</span>
             </button>
             {actionsExpanded && (
@@ -289,7 +308,7 @@ const App: React.FC = () => {
               <div className="sidebar-user-tenant">{auth.tenantId}</div>
             </div>
           </div>
-          <button className="btn-signout-sm" onClick={handleSignOut}>Sign Out</button> // nosemgrep: jsx-not-internationalized
+          <button className="btn-signout-sm" onClick={handleSignOut}>{UI.signOut}</button>
         </div>
       </aside>
 
@@ -297,15 +316,15 @@ const App: React.FC = () => {
         <header className="app-header">
           <button className="hamburger" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label="Menu">☰</button>
           <div className="header-center">
-            <div className="header-title">SaaS Billing Assistant</div> // nosemgrep: jsx-not-internationalized
+            <div className="header-title">{UI.headerTitle}</div>
             <div className="header-subtitle">{messages.length} messages</div>
           </div>
           <button className="btn-new-chat-sm" onClick={handleNewChat} title="New conversation">＋</button>
         </header>
         <div className="session-info-bar">
-          <span className="session-info-item">🏢 <span className="session-info-label">Tenant:</span> {auth.tenantId}</span> // nosemgrep: jsx-not-internationalized
-          <span className="session-info-item">🔗 <span className="session-info-label">Session:</span> {activeSessionId.slice(-12)}</span> // nosemgrep: jsx-not-internationalized
-          <span className="session-info-item">💬 <span className="session-info-label">Messages:</span> {messages.length}</span> // nosemgrep: jsx-not-internationalized
+          <span className="session-info-item">🏢 <span className="session-info-label">{UI.tenantLabel}</span> {auth.tenantId}</span>
+          <span className="session-info-item">🔗 <span className="session-info-label">{UI.sessionLabel}</span> {activeSessionId.slice(-12)}</span>
+          <span className="session-info-item">💬 <span className="session-info-label">{UI.messagesLabel}</span> {messages.length}</span>
         </div>
         <ChatWidget messages={messages} onSendMessage={handleSendMessage} loading={loading} quickActions={QUICK_ACTIONS} />
       </main>

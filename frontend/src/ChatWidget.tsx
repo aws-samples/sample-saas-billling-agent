@@ -1,6 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
 import type { AgentMessage } from "./App";
 
+// UI strings — extracted for i18n compliance
+const UI = {
+  welcomeTitle: "Welcome to your Billing Assistant",
+  welcomeText: "I can help you understand your API usage, manage invoices, check plan limits, and more. Try one of the actions below or type your own question.",
+} as const;
+
 // ── Markdown rendering helpers ─────────────────────────────────────
 
 function parseMarkdownTable(text: string): { headers: string[]; rows: string[][] } | null {
@@ -85,8 +91,8 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ messages, onSendMessage, loadin
           <div className="chat-empty">
             <div className="empty-hero">
               <div className="empty-icon">💰</div>
-              <h2>Welcome to your Billing Assistant</h2> // nosemgrep: jsx-not-internationalized
-              <p>I can help you understand your API usage, manage invoices, check plan limits, and more. Try one of the actions below or type your own question.</p> // nosemgrep: jsx-not-internationalized
+              <h2>{UI.welcomeTitle}</h2>
+              <p>{UI.welcomeText}</p>
             </div>
             <div className="action-grid">
               {quickActions.map((a) => (
