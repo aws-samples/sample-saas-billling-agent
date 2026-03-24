@@ -42,6 +42,8 @@ USAGE_TOOLS = [
      "inputSchema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "endpoint": {"type": "string", "description": "API endpoint path e.g. /api/users"}, "year_month": {"type": "string", "description": "Month in YYYY-MM format"}}, "required": ["tenant_id", "endpoint", "year_month"]}},
     {"name": "get_usage_trend", "description": "Get monthly usage trend over a date range. Use start_month and end_month in YYYY-MM format.",
      "inputSchema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "start_month": {"type": "string", "description": "Start month YYYY-MM"}, "end_month": {"type": "string", "description": "End month YYYY-MM"}}, "required": ["tenant_id", "start_month", "end_month"]}},
+    {"name": "get_usage_breakdown", "description": "Get API usage broken down by endpoint for a month. Shows each endpoint with its call count, data transfer, and compute time sorted by most used.",
+     "inputSchema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "year_month": {"type": "string", "description": "Month in YYYY-MM format"}, "breakdown": {"type": "boolean", "description": "Must be true"}}, "required": ["tenant_id", "year_month", "breakdown"]}},
 ]
 BILLING_TOOLS = [
     {"name": "generate_invoice", "description": "Generate a draft invoice for a specific month",

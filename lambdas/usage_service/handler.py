@@ -105,6 +105,36 @@ def get_usage_summary(tenant_id: str, year_month: str) -> dict:
     }
 
 
+def get_usage_breakdown(tenant_id: str, year_month: str) -> dict:
+    """Return usage grouped by endpoint for *tenant_id* in *year_month*."""
+    _validate_year_month(year_month)
+
+    pk = f"{tenant_id}#{year_month}"
+    endpoints: dict[str, dict] = {}
+
+    params: dict = {"KeyConditionExpression": Key("pk").eq(pk)}
+    while True:
+        response = _table.query(**params)
+        for item in response.get("Items", []):
+            ep = item.get("endpoint_name", item.get("sk", "").split("#")[0])
+            if ep not in endpoints:
+                endpoints[ep] = {"api_calls": 0, "data_transfer_bytes": 0, "compute_seconds": 0}
+            endpoints[ep]["api_calls"] += int(item.get("api_calls", 0))
+            endpoints[ep]["data_transfer_bytes"] += int(item.get("data_transfer_bytes", 0))
+            endpoints[ep]["compute_seconds"] += int(item.get("compute_seconds", 0))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        params["ExclusiveStartKey"] = last_key
+
+    breakdown = sorted(endpoints.items(), key=lambda x: x[1]["api_calls"], reverse=True)
+    return {
+        "tenant_id": tenant_id,
+        "year_month": year_month,
+        "endpoints": [{"endpoint": ep, **data} for ep, data in breakdown],
+    }
+
+
 def get_usage_by_endpoint(tenant_id: str, endpoint: str, year_month: str) -> dict:
     """Return usage for a specific *endpoint* within *year_month*.
 
@@ -189,12 +219,14 @@ def handler(event, context):
     params = event.get("parameters", event.get("arguments", {}))
 
     # Gateway sends flat args — use discriminator fields to identify the tool
-    if not tool_name or tool_name not in ("get_usage_summary", "get_usage_by_endpoint", "get_usage_trend"):
+    if not tool_name or tool_name not in ("get_usage_summary", "get_usage_by_endpoint", "get_usage_trend", "get_usage_breakdown"):
         params = event if "tenant_id" in event else params
         if "start_month" in params and "end_month" in params:
             tool_name = "get_usage_trend"
         elif "endpoint" in params:
             tool_name = "get_usage_by_endpoint"
+        elif params.get("breakdown"):
+            tool_name = "get_usage_breakdown"
         else:
             tool_name = "get_usage_summary"
 
@@ -229,6 +261,12 @@ def handler(event, context):
                     "status": 400,
                 }
             return get_usage_trend(tenant_id, start_month, end_month)
+
+        elif tool_name == "get_usage_breakdown":
+            year_month = params.get("year_month")
+            if not year_month:
+                return {"error": "Missing required parameter: year_month", "status": 400}
+            return get_usage_breakdown(tenant_id, year_month)
 
         else:
             return {"error": f"Unknown tool: {tool_name}", "status": 400}

@@ -55,9 +55,26 @@ This single command:
 2. Deploys all infrastructure via CDK (DynamoDB, Cognito, Lambdas, ECR, AgentCore Runtime/Gateway/Memory/Policy/CodeInterpreter, S3+CloudFront)
 3. Rebuilds frontend with real Cognito config and pushes to CloudFront
 4. Seeds DynamoDB with sample data for two tenants (2025 + 2026)
-5. Creates test users in Cognito
 
-The deployment URL and credentials are printed at the end.
+After deploy completes, create test users:
+
+```bash
+POOL_ID=<UserPoolId from deploy output>
+
+# tenant-alpha (Pro plan)
+aws cognito-idp admin-create-user --user-pool-id $POOL_ID --username tenant-alpha \
+  --temporary-password TempPass123! --user-attributes Name=custom:tenant_id,Value=tenant-alpha \
+  --message-action SUPPRESS --region us-east-1
+aws cognito-idp admin-set-user-password --user-pool-id $POOL_ID --username tenant-alpha \
+  --password TenantAlpha123! --permanent --region us-east-1
+
+# tenant-beta (Starter plan)
+aws cognito-idp admin-create-user --user-pool-id $POOL_ID --username tenant-beta \
+  --temporary-password TempPass123! --user-attributes Name=custom:tenant_id,Value=tenant-beta \
+  --message-action SUPPRESS --region us-east-1
+aws cognito-idp admin-set-user-password --user-pool-id $POOL_ID --username tenant-beta \
+  --password TenantBeta123! --permanent --region us-east-1
+```
 
 ## What Gets Deployed
 
@@ -65,7 +82,7 @@ The deployment URL and credentials are printed at the end.
 |---|---|
 | 4 DynamoDB tables | Usage, Billing, Entitlements, Plan Catalog |
 | Cognito User Pool | Auth (frontend JWT + M2M OAuth2 for Gateway) |
-| 3 Lambda functions | Usage, Billing, Entitlement services (12 tools total) |
+| 3 Lambda functions | Usage, Billing, Entitlement services (13 tools total) |
 | ECR + CodeBuild | Builds and hosts agent container image |
 | AgentCore Runtime | Runs the Strands agent container |
 | AgentCore MCP Gateway | Routes tool calls to Lambdas (CUSTOM_JWT auth) |
@@ -84,11 +101,11 @@ The deployment URL and credentials are printed at the end.
 | `tenant-alpha` | `TenantAlpha123!` | Pro ($99/mo) | 100,000 calls/mo |
 | `tenant-beta` | `TenantBeta123!` | Starter ($29/mo) | 10,000 calls/mo |
 
-## MCP Gateway Tools (12 total)
+## MCP Gateway Tools (13 total)
 
 | Service | Tools |
 |---|---|
-| UsageService | `get_usage_summary`, `get_usage_by_endpoint`, `get_usage_trend` |
+| UsageService | `get_usage_summary`, `get_usage_by_endpoint`, `get_usage_trend`, `get_usage_breakdown` |
 | BillingService | `generate_invoice`, `get_invoice_history`, `apply_credit`, `get_balance`, `confirm_invoice` |
 | EntitlementService | `get_current_plan`, `check_quota`, `get_plan_catalog`, `recommend_upgrade` |
 

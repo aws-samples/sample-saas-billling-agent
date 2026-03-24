@@ -67,18 +67,26 @@ export async function sendMessageToAgent(message: string, jwtToken: string, tena
 }
 
 const QUICK_ACTIONS = [
-  { icon: "📊", label: "Usage Summary", prompt: "Show me my API usage summary for this month in a table", color: "#4f46e5" },
-  { icon: "📈", label: "Usage Trend", prompt: "Show my usage trend for the last 3 months with month-over-month growth percentages", color: "#0891b2" },
-  { icon: "📉", label: "Usage Chart", prompt: "Use code_interpreter to execute Python code that creates a bar chart of my API usage for the last 3 months using matplotlib. You must run the code.", color: "#0d9488" },
-  { icon: "🧾", label: "Invoice History", prompt: "Show all my invoices with status, amount, and due date in a table", color: "#7c3aed" },
-  { icon: "💳", label: "Current Balance", prompt: "What is my current billing balance?", color: "#059669" },
-  { icon: "📋", label: "My Plan", prompt: "What is my current plan? Show limits for API calls and data transfer", color: "#d97706" },
-  { icon: "⚠️", label: "Quota Check", prompt: "Check my quota — show usage vs limits as percentages and warn if I am approaching any limit", color: "#dc2626" },
-  { icon: "🔄", label: "Plan Comparison", prompt: "Show all available plans in a comparison table with pricing, API limits, and data transfer limits", color: "#2563eb" },
-  { icon: "💡", label: "Upgrade Advice", prompt: "Analyze my current usage against my plan limits and recommend whether I should upgrade. Show the numbers.", color: "#9333ea" },
-  { icon: "🧠", label: "Recall Memory", prompt: "What do you remember about me from our previous conversations? What are my preferences?", color: "#6366f1" },
-  { icon: "🥧", label: "Endpoint Breakdown", prompt: "Use code_interpreter to execute Python code that creates a pie chart showing my API usage breakdown by endpoint for this month. You must run the code.", color: "#f59e0b" },
-  { icon: "📊", label: "Cost Projection", prompt: "Use code_interpreter to execute Python code that projects my costs for next month based on the last 3 months trend using linear regression. Show the chart and numbers.", color: "#ef4444" },
+  // ── Data Queries ──
+  { icon: "📊", label: "This Month's Usage", prompt: "Show my complete API usage summary for this month — include total API calls, data transfer in GB, and compute seconds in a clean table", color: "#4f46e5" },
+  { icon: "📈", label: "3-Month Trend", prompt: "Show my usage trend for the last 3 months. Include month-over-month growth percentages for API calls, data transfer, and compute time", color: "#0891b2" },
+  { icon: "🔍", label: "Top Endpoints", prompt: "Which API endpoints am I using the most this month? Show a breakdown by endpoint with call counts", color: "#0ea5e9" },
+  { icon: "🧾", label: "My Invoices", prompt: "Show all my invoices in a table with month, amount, status (draft/sent), and due date", color: "#7c3aed" },
+  { icon: "💳", label: "Account Balance", prompt: "What is my current billing balance? Have any credits been applied recently?", color: "#059669" },
+
+  // ── Plan & Quota ──
+  { icon: "📋", label: "Plan Details", prompt: "What plan am I on? Show my API call limit, data transfer limit, price, and when it expires", color: "#d97706" },
+  { icon: "⚠️", label: "Am I Near Limits?", prompt: "Check my quota status — what percentage of my API call and data transfer limits have I used this month? Am I approaching any limit?", color: "#dc2626" },
+  { icon: "🔄", label: "Compare Plans", prompt: "Show all available plans side by side in a comparison table — include name, monthly price, API call limit, data transfer limit, and features", color: "#2563eb" },
+  { icon: "💡", label: "Should I Upgrade?", prompt: "Based on my actual usage over the last 3 months, do I need to upgrade my plan? Show my usage vs limits and recommend the best option with cost savings", color: "#9333ea" },
+
+  // ── Visualizations (Code Interpreter) ──
+  { icon: "📉", label: "Usage Bar Chart", prompt: "Use code_interpreter to execute Python code that creates a colored bar chart comparing my API calls across Jan, Feb, and Mar 2026 using matplotlib. You must actually run the code, not just describe it.", color: "#0d9488" },
+  { icon: "🥧", label: "Endpoint Pie Chart", prompt: "Use code_interpreter to execute Python code that creates a pie chart showing the percentage breakdown of my API usage by endpoint for this month using matplotlib. You must actually run the code.", color: "#f59e0b" },
+  { icon: "📊", label: "Cost Forecast", prompt: "Use code_interpreter to execute Python code that takes my last 3 months of usage data, fits a linear regression, and projects next month's API calls and estimated cost. Show both a chart and the numbers. You must actually run the code.", color: "#ef4444" },
+
+  // ── Memory & Context ──
+  { icon: "🧠", label: "What Do You Remember?", prompt: "What do you remember about me and my account from our previous conversations? Any preferences or patterns you've noticed?", color: "#6366f1" },
 ];
 
 const App: React.FC = () => {
@@ -174,7 +182,8 @@ const App: React.FC = () => {
     setLoading(true);
     try {
       const tokenInfo = await getAuthToken();
-      const agentMsg = await sendMessageToAgent(text, tokenInfo?.token ?? auth.jwtToken, tokenInfo?.tenantId ?? auth.tenantId ?? "unknown", sessionIdRef.current);
+      const enrichedPrompt = `[Context: tenant_id=${tokenInfo?.tenantId ?? auth.tenantId}] ${text}`;
+      const agentMsg = await sendMessageToAgent(enrichedPrompt, tokenInfo?.token ?? auth.jwtToken, tokenInfo?.tenantId ?? auth.tenantId ?? "unknown", sessionIdRef.current);
       setMessages((prev) => [...prev, agentMsg]);
     } catch (err) {
       setMessages((prev) => [...prev, { role: "agent", content: `Sorry, something went wrong: ${err instanceof Error ? err.message : "Unknown error"}`, timestamp: Date.now() }]);
