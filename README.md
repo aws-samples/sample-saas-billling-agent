@@ -205,4 +205,4 @@ By contributing to this project, you agree that your contributions will be licen
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](../../LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](https://github.com/awslabs/amazon-bedrock-agentcore-samples/blob/main/LICENSE) file for details.
