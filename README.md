@@ -7,7 +7,7 @@ A multi-tenant SaaS billing agent built on **Amazon Bedrock AgentCore**. Tenants
 ## Architecture
 
 
-![image info](Architecture/saas_billing_agent.png)
+![image info](architecture/saas_billing_agent.png)
 
 
 ## Key Capabilities
