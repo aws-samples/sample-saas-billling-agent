@@ -6,17 +6,9 @@ A multi-tenant SaaS billing agent built on **Amazon Bedrock AgentCore**. Tenants
 
 ## Architecture
 
-```
-Browser (React) → CloudFront/S3 → Cognito Auth → AgentCore Runtime (Docker)
-                                                        ↓
-                                              Strands Agent (Claude Haiku 4.5)
-                                              ↓         ↓           ↓
-                                        Memory     MCP Gateway    Code Interpreter
-                                      (STM+LTM)   (Policy:ENFORCE)  (Charts)
-                                                   (3 Lambdas)
-                                                        ↓
-                                                  DynamoDB (4 tables)
-```
+
+![image info](Architecture/saas_billing_agent.png)
+
 
 ## Key Capabilities
 
@@ -84,7 +76,7 @@ aws cognito-idp admin-set-user-password --user-pool-id $POOL_ID --username tenan
 |---|---|
 | 4 DynamoDB tables | Usage, Billing, Entitlements, Plan Catalog |
 | Cognito User Pool | Auth (frontend JWT + M2M OAuth2 for Gateway) |
-| 3 Lambda functions | Usage, Billing, Entitlement services (13 tools total) |
+| 3 Lambda functions | Usage, Billing, Entitlement services |
 | ECR + CodeBuild | Builds and hosts agent container image |
 | AgentCore Runtime | Runs the Strands agent container |
 | AgentCore MCP Gateway | Routes tool calls to Lambdas (CUSTOM_JWT auth) |
