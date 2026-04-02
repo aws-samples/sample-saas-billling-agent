@@ -47,18 +47,59 @@ interface ConversationSession {
 }
 
 function generateSessionId(): string {
-  return `billing-session-${Date.now()}-${Math.random().toString(36).slice(2, 15)}`;
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `billing-session-${Date.now()}-${hex}`;
 }
 
-function loadSessions(): ConversationSession[] {
+const STORAGE_KEY = "billing_sessions";
+const ENCRYPTION_SALT = "saas-billing-agent-v1";
+
+async function deriveKey(): Promise<CryptoKey> {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw", encoder.encode(ENCRYPTION_SALT), "PBKDF2", false, ["deriveKey"]
+  );
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: encoder.encode("billing-salt"), iterations: 100000, hash: "SHA-256" },
+    keyMaterial, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]
+  );
+}
+
+async function encryptData(data: string): Promise<string> {
+  const key = await deriveKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(data);
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoded);
+  const combined = new Uint8Array(iv.length + new Uint8Array(encrypted).length);
+  combined.set(iv);
+  combined.set(new Uint8Array(encrypted), iv.length);
+  return btoa(String.fromCharCode(...combined));
+}
+
+async function decryptData(data: string): Promise<string> {
+  const key = await deriveKey();
+  const combined = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+  const iv = combined.slice(0, 12);
+  const encrypted = combined.slice(12);
+  const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, encrypted);
+  return new TextDecoder().decode(decrypted);
+}
+
+async function loadSessions(): Promise<ConversationSession[]> {
   try {
-    const raw = localStorage.getItem("billing_sessions");
-    return raw ? JSON.parse(raw) : [];
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const decrypted = await decryptData(raw);
+    return JSON.parse(decrypted);
   } catch { return []; }
 }
 
-function saveSessions(sessions: ConversationSession[]) {
-  try { localStorage.setItem("billing_sessions", JSON.stringify(sessions.slice(0, 20))); } catch { /* quota */ }
+async function saveSessions(sessions: ConversationSession[]) {
+  try {
+    const encrypted = await encryptData(JSON.stringify(sessions.slice(0, 20)));
+    localStorage.setItem(STORAGE_KEY, encrypted);
+  } catch { /* quota */ }
 }
 
 export async function getAuthToken(): Promise<{ token: string; tenantId: string } | null> {
@@ -110,24 +151,34 @@ const QUICK_ACTIONS = [
 
 const App: React.FC = () => {
   const [auth, setAuth] = useState<AuthState>({ isAuthenticated: false, tenantId: null, username: null, jwtToken: null });
-  const [sessions, setSessions] = useState<ConversationSession[]>(loadSessions);
-  const [activeSessionId, setActiveSessionId] = useState<string>(() => {
-    const saved = loadSessions();
-    return saved.length > 0 ? saved[0].id : generateSessionId();
-  });
-  const [messages, setMessages] = useState<AgentMessage[]>(() => {
-    const saved = loadSessions();
-    return saved.length > 0 ? saved[0].messages : [];
-  });
+  const [sessions, setSessions] = useState<ConversationSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string>(generateSessionId);
+  const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [loginForm, setLoginForm] = useState({ username: "", password: "" });
   const [loginError, setLoginError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [actionsExpanded, setActionsExpanded] = useState(false);
-  const sessionIdRef = useRef(loadSessions()[0]?.id ?? generateSessionId());
+  const sessionIdRef = useRef(generateSessionId());
+  const sessionsLoaded = useRef(false);
+
+  // Load encrypted sessions from storage on mount
+  useEffect(() => {
+    (async () => {
+      const saved = await loadSessions();
+      if (saved.length > 0) {
+        setSessions(saved);
+        setActiveSessionId(saved[0].id);
+        setMessages(saved[0].messages);
+        sessionIdRef.current = saved[0].id;
+      }
+      sessionsLoaded.current = true;
+    })();
+  }, []);
 
   // Persist messages to sessions whenever they change
   useEffect(() => {
+    if (!sessionsLoaded.current) return;
     setSessions((prev) => {
       const idx = prev.findIndex((s) => s.id === activeSessionId);
       let updated: ConversationSession[];
