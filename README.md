@@ -57,17 +57,19 @@ POOL_ID=<UserPoolId from deploy output>
 
 # tenant-alpha (Pro plan)
 aws cognito-idp admin-create-user --user-pool-id $POOL_ID --username tenant-alpha \
-  --temporary-password TempPass123! --user-attributes Name=custom:tenant_id,Value=tenant-alpha \
+  --temporary-password <choose password> --user-attributes Name=custom:tenant_id,Value=tenant-alpha \
   --message-action SUPPRESS --region us-east-1
 aws cognito-idp admin-set-user-password --user-pool-id $POOL_ID --username tenant-alpha \
-  --password TenantAlpha123! --permanent --region us-east-1
+  --password <choose password> --permanent --region us-east-1
 
 # tenant-beta (Starter plan)
 aws cognito-idp admin-create-user --user-pool-id $POOL_ID --username tenant-beta \
-  --temporary-password TempPass123! --user-attributes Name=custom:tenant_id,Value=tenant-beta \
+  --temporary-password <choose password> --user-attributes Name=custom:tenant_id,Value=tenant-beta \
   --message-action SUPPRESS --region us-east-1
 aws cognito-idp admin-set-user-password --user-pool-id $POOL_ID --username tenant-beta \
-  --password TenantBeta123! --permanent --region us-east-1
+  --password <choose password> --permanent --region us-east-1
+
+Security Note: Replace <choose password> with strong, unique passwords. For production deployments, use AWS Secrets Manager to store and rotate credentials automatically. Never commit passwords to source control or documentation.
 ```
 
 ## What Gets Deployed
@@ -92,8 +94,8 @@ aws cognito-idp admin-set-user-password --user-pool-id $POOL_ID --username tenan
 
 | Tenant | Password | Plan | API Limit |
 |---|---|---|---|
-| `tenant-alpha` | `TenantAlpha123!` | Pro ($99/mo) | 100,000 calls/mo |
-| `tenant-beta` | `TenantBeta123!` | Starter ($29/mo) | 10,000 calls/mo |
+| `tenant-alpha` | `<choose password>` | Pro ($99/mo) | 100,000 calls/mo |
+| `tenant-beta` | `<choose password>` | Starter ($29/mo) | 10,000 calls/mo |
 
 ## MCP Gateway Tools (13 total)
 
