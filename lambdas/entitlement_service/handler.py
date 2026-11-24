@@ -4,7 +4,8 @@ Provides MCP tools for querying tenant plan entitlements, checking quota
 usage against limits, browsing the plan catalog, and recommending plan
 upgrades.  Queries against the Entitlements and PlanCatalog tables use
 tenant-scoped partition keys.  The PlanCatalog scan is acceptable for a
-small catalog table.
+small catalog table.  The tenant is taken from a signed assertion, never
+from tool arguments.
 
 Tools:
     get_current_plan    — retrieve the active plan for a tenant
@@ -13,12 +14,19 @@ Tools:
     recommend_upgrade   — suggest the optimal plan based on usage
 """
 
+import logging
 import os
 from datetime import datetime, timezone
 from decimal import Decimal
 
 import boto3
 from boto3.dynamodb.conditions import Key
+
+from tenant_auth import TenantAuthError, gateway_tool_name, verified_tenant_id
+
+logger = logging.getLogger(__name__)
+
+_TOOLS = ("get_current_plan", "check_quota", "get_plan_catalog", "recommend_upgrade")
 
 _ENTITLEMENTS_TABLE = os.environ.get("ENTITLEMENTS_TABLE", "Entitlements")
 _PLAN_CATALOG_TABLE = os.environ.get("PLAN_CATALOG_TABLE", "PlanCatalog")
@@ -273,43 +281,41 @@ def recommend_upgrade(tenant_id: str) -> dict:
 def handler(event, context):
     """Route incoming MCP Gateway events to the appropriate tool function.
 
-    Expected event shape::
+    The tenant comes only from the signed assertion that the agent attaches to
+    the Gateway request (see ``tenant_auth``). Any ``tenant_id`` in the event is
+    ignored, so a caller can't choose whose plan or quota to read. Even
+    ``get_plan_catalog``, which isn't tenant-specific, requires a valid
+    assertion.
 
-        {
-            "tool_name": "get_current_plan",
-            "parameters": {
-                "tenant_id": "tenant-abc"
-            }
-        }
+    Expected event shape (the tool arguments, flat)::
+
+        {"plan_info": true}
+
+    The Gateway sets the tool name in the Lambda context. If the context has no
+    tool name, the tool is inferred from the arguments present.
     """
-    tool_name = event.get("tool_name") or event.get("__tool_name__") or event.get("name")
-    params = event.get("parameters", event.get("arguments", {}))
+    try:
+        tenant_id = verified_tenant_id(context)
+    except TenantAuthError as exc:
+        logger.warning("Rejected request: %s", exc)
+        return {"error": "Unauthorized: tenant identity could not be verified", "status": 403}
 
-    # Gateway sends flat args — use discriminator fields to identify the tool
-    valid_tools = ("get_current_plan", "check_quota", "get_plan_catalog", "recommend_upgrade")
-    if not tool_name or tool_name not in valid_tools:
-        params = event if "tenant_id" in event else params
+    params = event if isinstance(event, dict) else {}
+
+    tool_name = gateway_tool_name(context)
+    if tool_name not in _TOOLS:
         if params.get("catalog"):
             tool_name = "get_plan_catalog"
         elif params.get("check_quota"):
             tool_name = "check_quota"
         elif params.get("recommend"):
             tool_name = "recommend_upgrade"
-        elif params.get("plan_info"):
-            tool_name = "get_current_plan"
-        elif not params.get("tenant_id"):
-            tool_name = "get_plan_catalog"
         else:
             tool_name = "get_current_plan"
 
     try:
         if tool_name == "get_plan_catalog":
-            # get_plan_catalog does not require tenant_id
             return get_plan_catalog()
-
-        tenant_id = params.get("tenant_id")
-        if not tenant_id:
-            return {"error": "Missing required parameter: tenant_id", "status": 400}
 
         if tool_name == "get_current_plan":
             return get_current_plan(tenant_id)

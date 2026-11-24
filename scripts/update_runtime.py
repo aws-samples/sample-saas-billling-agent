@@ -20,9 +20,19 @@ account_id = boto3.client("sts", region_name=REGION).get_caller_identity()["Acco
 uri = f"{account_id}.dkr.ecr.{REGION}.amazonaws.com/{ECR_REPO}@{digest}"
 print(f"New URI: {uri}")
 
-# Secret ARN
-secrets = sm.list_secrets(Filters=[{"Key": "name", "Values": ["SaaSBillingStack-M2MClientSecret"]}])
-secret_arn = secrets["SecretList"][0]["ARN"] if secrets["SecretList"] else ""
+# Keep every environment variable the Runtime already has and change only what this script
+# owns. Rebuilding the whole set from scratch dropped values it couldn't look up.
+current = ac.get_agent_runtime(agentRuntimeId=RUNTIME_ID)["environmentVariables"]
+
+# M2M client secret: take it from the stack (its generated name has no stack prefix), and
+# fall back to the value the Runtime already has. Never write an empty value.
+secret_arn = ""
+for res in cfn.describe_stack_resources(StackName=STACK)["StackResources"]:
+    if res["ResourceType"] == "AWS::SecretsManager::Secret" and res["LogicalResourceId"].startswith("M2MClientSecret"):
+        secret_arn = sm.describe_secret(SecretId=res["PhysicalResourceId"])["ARN"]
+secret_arn = secret_arn or current.get("GATEWAY_CLIENT_SECRET_ARN", "")
+if not secret_arn:
+    raise SystemExit("Could not determine GATEWAY_CLIENT_SECRET_ARN; refusing to update the Runtime without it.")
 
 pool_id = outputs["UserPoolId"]
 
@@ -38,13 +48,17 @@ resp = ac.update_agent_runtime(
         }
     },
     requestHeaderConfiguration={
-        "requestHeaderAllowlist": ["Authorization", "X-Amzn-Bedrock-AgentCore-Runtime-Custom-Tenant-Id"]
+        # Keep in sync with infra/stacks/unified_stack.py. The agent derives the tenant from
+        # the access token, so no tenant header is forwarded.
+        "requestHeaderAllowlist": ["Authorization"]
     },
     environmentVariables={
+        **current,
         "AGENTCORE_GATEWAY_URL": outputs["GatewayUrl"],
         "MEMORY_ID": outputs["MemoryId"],
         "CODE_INTERPRETER_ID": outputs["CodeInterpreterId"],
         "CREDENTIAL_PROVIDER_NAME": "SaaSBillingCredentialProvider",
+        "TENANT_ASSERTION_KEY_ID": outputs["TenantAssertionKeyId"],
         "COGNITO_DOMAIN": outputs["CognitoDomain"],
         "GATEWAY_CLIENT_ID": outputs["M2MClientId"],
         "GATEWAY_CLIENT_SECRET_ARN": secret_arn,

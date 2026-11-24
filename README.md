@@ -19,7 +19,7 @@ A multi-tenant SaaS billing agent built on **Amazon Bedrock AgentCore**. Tenants
 - **Conversation memory** — STM (within session) + LTM (semantic facts, preferences, summaries)
 - **Policy enforcement** — Cedar-based authorization via AgentCore Policy Engine (ENFORCE mode)
 - **Observability** — CloudWatch Logs + X-Ray traces for Runtime, Gateway, and Memory
-- **Multi-tenant isolation** — enforced at JWT, DynamoDB, Memory, Gateway, and Policy layers
+- **Multi-tenant isolation** — administrators assign each user's tenant in Cognito (users can't change it). The agent resolves the tenant from the caller's verified access token and binds it to every tool call, DynamoDB key, and Memory namespace
 
 ## Prerequisites
 
@@ -72,6 +72,8 @@ aws cognito-idp admin-set-user-password --user-pool-id $POOL_ID --username tenan
 Security Note: Replace <choose password> with strong, unique passwords. For production deployments, use AWS Secrets Manager to store and rotate credentials automatically. Never commit passwords to source control or documentation.
 ```
 
+`custom:tenant_id` determines which tenant's data a user can reach, so only administrators can set it, with IAM-authorized APIs such as `admin-create-user` and `admin-update-user-attributes`. No Cognito app client in the stack has write access to it, so users can't change it with `UpdateUserAttributes`. Users without a tenant can't sign in. If you add an app client, set `write_attributes` and leave `custom:tenant_id` out. An app client with no write attributes can write every mutable attribute.
+
 ## What Gets Deployed
 
 | Resource | Purpose |
@@ -79,6 +81,7 @@ Security Note: Replace <choose password> with strong, unique passwords. For prod
 | 4 DynamoDB tables | Usage, Billing, Entitlements, Plan Catalog |
 | Cognito User Pool | Auth (frontend JWT + M2M OAuth2 for Gateway) |
 | 3 Lambda functions | Usage, Billing, Entitlement services |
+| KMS HMAC key + Lambda layer | Signs (agent) and verifies (Lambdas) the tenant assertion |
 | ECR + CodeBuild | Builds and hosts agent container image |
 | AgentCore Runtime | Runs the Strands agent container |
 | AgentCore MCP Gateway | Routes tool calls to Lambdas (CUSTOM_JWT auth) |
@@ -107,11 +110,13 @@ Security Note: Replace <choose password> with strong, unique passwords. For prod
 
 ## Auth Flow
 
-1. User → Cognito login (USER_PASSWORD_AUTH) → access token
+1. User → Cognito login (USER_SRP_AUTH) → access token
 2. Frontend → Runtime `/runtimes/{arn}/invocations?qualifier=DEFAULT` with Bearer token
-3. Runtime JWT authorizer validates `client_id` against FrontendClient
-4. Agent → AgentCore Identity (`@requires_access_token`, M2M flow) → Cognito M2M token
-5. Agent → MCP Gateway (Policy Engine evaluates Cedar policy) → Lambda → DynamoDB
+3. Runtime JWT authorizer validates the token (issuer, signature, expiry, `client_id` = FrontendClient)
+4. Agent → Cognito `GetUser` with the caller's access token → administrator-assigned `custom:tenant_id`. The agent never takes the tenant from request headers, the request body, or prompt text, and rejects the request if it can't resolve one
+5. Agent → AgentCore Identity (`@requires_access_token`, M2M flow) → Cognito M2M token
+6. Agent → MCP Gateway (Policy Engine evaluates Cedar policy). The agent signs a short-lived tenant assertion with a KMS HMAC key and sends it as the `x-tenant-assertion` header, which the Gateway forwards to the Lambda targets. Before each call, a tool hook rejects calls that name another tenant and drops arguments the tool schema doesn't declare
+7. Gateway → Lambda → DynamoDB. Each service Lambda verifies the assertion with KMS and takes the tenant only from it. The tool schemas have no `tenant_id` argument, and any `tenant_id` in the event is ignored. Requests without a valid, unexpired assertion get a 403
 
 ## Updating the Agent
 
@@ -142,6 +147,7 @@ bash deploy.sh --destroy
 ├── agent/                  # Agent core (Strands + Memory + Code Interpreter)
 │   ├── agent.py            # Main agent with auth, tools, image extraction
 │   ├── access_token.py     # AgentCore Identity + Cognito fallback
+│   ├── tenant_isolation.py # Verified tenant resolution, tenant assertion signing, tool-call checks
 │   └── memory_hook.py      # Memory hook (legacy, replaced by session manager)
 ├── frontend/               # React SPA (Vite + Amplify Auth + conversation history)
 ├── infra/                  # CDK infrastructure (single UnifiedStack)
@@ -150,7 +156,8 @@ bash deploy.sh --destroy
 │   ├── usage_service/
 │   ├── billing_service/
 │   ├── entitlement_service/
-│   └── pre_token_generation/
+│   ├── pre_token_generation/
+│   └── common/python/tenant_auth.py  # Lambda layer: verifies the signed tenant assertion
 ├── scripts/                # Seed data + runtime update utility
 ├── deploy.sh               # One-click deploy orchestrator
 ├── Dockerfile              # Agent container
@@ -161,11 +168,14 @@ bash deploy.sh --destroy
 ## Security Considerations
 1. **Authentication & Authorization**
    - All API access is secured through OAuth 2.0 with Amazon Cognito (JWT-based)
-   - Cedar-based policy enforcement (ENFORCE mode) ensures strict tenant isolation at every layer
+   - The MCP Gateway accepts only the agent's M2M client. Its Cedar policy (ENFORCE mode) allows that authenticated principal to call the billing tools, so it doesn't scope by tenant. Tenant scoping is done by the signed tenant assertion that each service Lambda verifies
    - M2M credentials use short-lived tokens via AgentCore Workload Identity
 2. **Data Isolation**
-   - Multi-tenant isolation is enforced across JWT validation, DynamoDB access patterns, Memory, MCP Gateway, and Policy Engine
-   - Tenants cannot access, modify, or infer data belonging to other tenants
+   - Only administrators can assign a user's tenant (`custom:tenant_id`). It is excluded from the write attributes of every Cognito app client
+   - On every request the agent resolves the tenant from Cognito with the caller's verified access token. It doesn't trust tenant values from headers, the request body, or prompts, and it fails closed
+   - The service Lambdas (usage, billing, entitlement) don't trust the agent's tool arguments. They take the tenant from a KMS-signed assertion that expires after 9 minutes. Only the agent role can sign (`kms:GenerateMac`) and only the three Lambdas can verify (`kms:VerifyMac`), so neither a prompt-injected model nor a compromised Lambda can name another tenant's data. Someone who holds the Gateway's M2M client secret but can't call KMS as the agent role can't forge an assertion either
+   - A leaked assertion works only for its own tenant until it expires. HMAC keys can't be rotated automatically. To replace the key, deploy a new one and redeploy the Runtime and Lambdas together
+   - Memory uses the verified tenant as its actor ID
 3. **Secrets & Configuration**
    - All sensitive values (client secrets, endpoints, keys) are stored in environment variables — never hardcoded
    - IAM roles follow the principle of least privilege with scoped permissions per Lambda and service

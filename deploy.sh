@@ -323,8 +323,9 @@ print_summary() {
   echo -e "  Region:       ${CYAN}$REGION${NC}"
   echo ""
   echo -e "  Test with:"
-  echo -e "    ${YELLOW}agentcore invoke '{\"prompt\": \"What is my usage?\"}' \\${NC}"
-  echo -e "    ${YELLOW}  --headers \"X-Amzn-Bedrock-AgentCore-Runtime-Custom-Tenant-Id:tenant-alpha\"${NC}"
+  echo -e "    1. Create users with an admin-assigned custom:tenant_id (see README)"
+  echo -e "    2. Sign in at ${CYAN}$FRONTEND_URL${NC}"
+  echo -e "    The agent reads each user's tenant from Cognito; tenant headers and prompt text are ignored."
   echo ""
 }
 

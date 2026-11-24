@@ -23,6 +23,7 @@ from aws_cdk import (
     aws_dynamodb as dynamodb,
     aws_ecr as ecr,
     aws_iam as iam,
+    aws_kms as kms,
     aws_lambda as _lambda,
     aws_s3 as s3,
     aws_s3_assets as s3_assets,
@@ -38,36 +39,36 @@ from constructs import Construct
 # ── MCP tool schemas ────────────────────────────────────────────────
 
 USAGE_TOOLS = [
-    {"name": "get_usage_summary", "description": "Get total API usage for a tenant in a specific month. Returns api_calls, data_transfer_bytes, compute_seconds.",
-     "inputSchema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "year_month": {"type": "string", "description": "Month in YYYY-MM format"}}, "required": ["tenant_id", "year_month"]}},
+    {"name": "get_usage_summary", "description": "Get the caller's total API usage in a specific month. Returns api_calls, data_transfer_bytes, compute_seconds.",
+     "inputSchema": {"type": "object", "properties": {"year_month": {"type": "string", "description": "Month in YYYY-MM format"}}, "required": ["year_month"]}},
     {"name": "get_usage_by_endpoint", "description": "Get usage breakdown for a specific API endpoint in a month",
-     "inputSchema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "endpoint": {"type": "string", "description": "API endpoint path e.g. /api/users"}, "year_month": {"type": "string", "description": "Month in YYYY-MM format"}}, "required": ["tenant_id", "endpoint", "year_month"]}},
+     "inputSchema": {"type": "object", "properties": {"endpoint": {"type": "string", "description": "API endpoint path e.g. /api/users"}, "year_month": {"type": "string", "description": "Month in YYYY-MM format"}}, "required": ["endpoint", "year_month"]}},
     {"name": "get_usage_trend", "description": "Get monthly usage trend over a date range. Use start_month and end_month in YYYY-MM format.",
-     "inputSchema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "start_month": {"type": "string", "description": "Start month YYYY-MM"}, "end_month": {"type": "string", "description": "End month YYYY-MM"}}, "required": ["tenant_id", "start_month", "end_month"]}},
+     "inputSchema": {"type": "object", "properties": {"start_month": {"type": "string", "description": "Start month YYYY-MM"}, "end_month": {"type": "string", "description": "End month YYYY-MM"}}, "required": ["start_month", "end_month"]}},
     {"name": "get_usage_breakdown", "description": "Get API usage broken down by endpoint for a month. Shows each endpoint with its call count, data transfer, and compute time sorted by most used.",
-     "inputSchema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "year_month": {"type": "string", "description": "Month in YYYY-MM format"}, "breakdown": {"type": "boolean", "description": "Must be true"}}, "required": ["tenant_id", "year_month", "breakdown"]}},
+     "inputSchema": {"type": "object", "properties": {"year_month": {"type": "string", "description": "Month in YYYY-MM format"}, "breakdown": {"type": "boolean", "description": "Must be true"}}, "required": ["year_month", "breakdown"]}},
 ]
 BILLING_TOOLS = [
     {"name": "generate_invoice", "description": "Generate a draft invoice for a specific month",
-     "inputSchema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "year_month": {"type": "string", "description": "Month in YYYY-MM format"}}, "required": ["tenant_id", "year_month"]}},
-    {"name": "get_invoice_history", "description": "Get all past invoices for a tenant. Only requires tenant_id, no other parameters.",
-     "inputSchema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "history": {"type": "boolean", "description": "Must be true"}}, "required": ["tenant_id", "history"]}},
+     "inputSchema": {"type": "object", "properties": {"year_month": {"type": "string", "description": "Month in YYYY-MM format"}}, "required": ["year_month"]}},
+    {"name": "get_invoice_history", "description": "Get all past invoices for a tenant. Takes no other parameters.",
+     "inputSchema": {"type": "object", "properties": {"history": {"type": "boolean", "description": "Must be true"}}, "required": ["history"]}},
     {"name": "apply_credit", "description": "Apply a credit to tenant account",
-     "inputSchema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "amount_cents": {"type": "integer", "description": "Credit amount in cents"}, "reason": {"type": "string", "description": "Reason for the credit"}}, "required": ["tenant_id", "amount_cents", "reason"]}},
-    {"name": "get_balance", "description": "Get current billing balance for a tenant. Only requires tenant_id.",
-     "inputSchema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "balance": {"type": "boolean", "description": "Must be true"}}, "required": ["tenant_id", "balance"]}},
+     "inputSchema": {"type": "object", "properties": {"amount_cents": {"type": "integer", "description": "Credit amount in cents"}, "reason": {"type": "string", "description": "Reason for the credit"}}, "required": ["amount_cents", "reason"]}},
+    {"name": "get_balance", "description": "Get current billing balance for a tenant. Takes no other parameters.",
+     "inputSchema": {"type": "object", "properties": {"balance": {"type": "boolean", "description": "Must be true"}}, "required": ["balance"]}},
     {"name": "confirm_invoice", "description": "Confirm a draft invoice and transition it to sent status",
-     "inputSchema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "year_month": {"type": "string", "description": "Month in YYYY-MM format"}, "confirm": {"type": "boolean", "description": "Must be true"}}, "required": ["tenant_id", "year_month", "confirm"]}},
+     "inputSchema": {"type": "object", "properties": {"year_month": {"type": "string", "description": "Month in YYYY-MM format"}, "confirm": {"type": "boolean", "description": "Must be true"}}, "required": ["year_month", "confirm"]}},
 ]
 ENTITLEMENT_TOOLS = [
     {"name": "get_current_plan", "description": "Get the current plan and entitlements for a tenant. Returns plan_id, api_call_limit, data_transfer_limit_gb.",
-     "inputSchema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "plan_info": {"type": "boolean", "description": "Must be true"}}, "required": ["tenant_id", "plan_info"]}},
+     "inputSchema": {"type": "object", "properties": {"plan_info": {"type": "boolean", "description": "Must be true"}}, "required": ["plan_info"]}},
     {"name": "check_quota", "description": "Check quota usage vs plan limits. Returns usage percentages and is_approaching_limit flag.",
-     "inputSchema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "check_quota": {"type": "boolean", "description": "Must be true"}}, "required": ["tenant_id", "check_quota"]}},
-    {"name": "get_plan_catalog", "description": "List all available plans with pricing and limits. No tenant_id needed.",
+     "inputSchema": {"type": "object", "properties": {"check_quota": {"type": "boolean", "description": "Must be true"}}, "required": ["check_quota"]}},
+    {"name": "get_plan_catalog", "description": "List all available plans with pricing and limits. Not specific to a tenant.",
      "inputSchema": {"type": "object", "properties": {"catalog": {"type": "boolean", "description": "Must be true"}}, "required": ["catalog"]}},
     {"name": "recommend_upgrade", "description": "Analyze current usage and recommend the best plan upgrade based on headroom.",
-     "inputSchema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "recommend": {"type": "boolean", "description": "Must be true"}}, "required": ["tenant_id", "recommend"]}},
+     "inputSchema": {"type": "object", "properties": {"recommend": {"type": "boolean", "description": "Must be true"}}, "required": ["recommend"]}},
 ]
 
 
@@ -101,17 +102,29 @@ class UnifiedStack(cdk.Stack):
             runtime=_lambda.Runtime.PYTHON_3_12, handler="handler.handler",
             code=_lambda.Code.from_asset("lambdas/pre_token_generation"))
 
+        # custom:tenant_id decides which tenant's data a user can reach, so only administrators
+        # (IAM-authorized Admin* APIs) may set it. It is left out of every app client's
+        # write_attributes below. It stays mutable because Cognito can't change the mutability
+        # of an existing custom attribute, and changing it here would fail stack updates.
         user_pool = cognito.UserPool(self, "UserPool",
             user_pool_name="SaaSBillingUserPool",
             self_sign_up_enabled=False, removal_policy=RemovalPolicy.DESTROY,
             custom_attributes={"tenant_id": cognito.StringAttribute(min_len=1, max_len=256, mutable=True)},
             lambda_triggers=cognito.UserPoolTriggers(pre_token_generation=pre_token_fn))
 
+        # Attributes users may change on their own profile with UpdateUserAttributes.
+        # Keep this list non-empty and never add custom:tenant_id: when an app client has no
+        # write attributes (omitted or empty), Cognito lets users write every mutable attribute,
+        # custom ones included.
+        self_service_write_attributes = cognito.ClientAttributes().with_standard_attributes(
+            fullname=True, given_name=True, family_name=True)
+
         billing_scope = cognito.ResourceServerScope(scope_name="billing", scope_description="Billing tools")
         rs = user_pool.add_resource_server("ResourceServer", identifier="saas-billing", scopes=[billing_scope])
 
         m2m_client = user_pool.add_client("M2MClient",
             user_pool_client_name="SaaSBillingM2MClient", generate_secret=True,
+            write_attributes=self_service_write_attributes,
             o_auth=cognito.OAuthSettings(
                 flows=cognito.OAuthFlows(client_credentials=True),
                 scopes=[cognito.OAuthScope.resource_server(rs, billing_scope)]))
@@ -121,7 +134,8 @@ class UnifiedStack(cdk.Stack):
 
         frontend_client = user_pool.add_client("FrontendClient",
             user_pool_client_name="SaaSBillingFrontendClient", generate_secret=False,
-            auth_flows=cognito.AuthFlow(user_password=True, user_srp=True))
+            auth_flows=cognito.AuthFlow(user_password=True, user_srp=True),
+            write_attributes=self_service_write_attributes)
 
         issuer_url = f"https://cognito-idp.{self.region}.amazonaws.com/{user_pool.user_pool_id}/.well-known/openid-configuration"
 
@@ -129,18 +143,37 @@ class UnifiedStack(cdk.Stack):
             secret_string_value=m2m_client.user_pool_client_secret,
             description="SaaS Billing M2M client secret")
 
-        # ── 3. Lambdas ──────────────────────────────────────────────
+        # ── 3. Tenant assertion key + Lambdas ───────────────────────
+        # The agent signs a short-lived "this caller belongs to tenant X" assertion with this
+        # HMAC key; the service Lambdas verify it and take the tenant from it, ignoring tool
+        # arguments. Signing (GenerateMac) is granted to the agent role only and verifying
+        # (VerifyMac) to the three Lambdas only, so a compromised Lambda can't mint an
+        # assertion for another tenant. HMAC keys don't support automatic rotation.
+        tenant_assertion_key = kms.Key(self, "TenantAssertionKey",
+            description="Signs and verifies tenant assertions between the agent and the service Lambdas",
+            key_spec=kms.KeySpec.HMAC_256, key_usage=kms.KeyUsage.GENERATE_VERIFY_MAC,
+            removal_policy=RemovalPolicy.DESTROY, pending_window=Duration.days(7))
+
+        tenant_auth_layer = _lambda.LayerVersion(self, "TenantAuthLayer",
+            code=_lambda.Code.from_asset("lambdas/common"),
+            compatible_runtimes=[_lambda.Runtime.PYTHON_3_12],
+            description="Verifies the signed tenant assertion (tenant_auth.py)")
+
+        lambda_env = {"TENANT_ASSERTION_KEY_ID": tenant_assertion_key.key_id}
+
         usage_fn = _lambda.Function(self, "UsageFn",
             runtime=_lambda.Runtime.PYTHON_3_12, handler="handler.handler",
             code=_lambda.Code.from_asset("lambdas/usage_service"),
-            environment={"USAGE_RECORDS_TABLE": tables["UsageRecords"].table_name})
+            layers=[tenant_auth_layer],
+            environment={"USAGE_RECORDS_TABLE": tables["UsageRecords"].table_name, **lambda_env})
         usage_fn.add_to_role_policy(iam.PolicyStatement(effect=iam.Effect.ALLOW,
             actions=["dynamodb:Query", "dynamodb:GetItem"], resources=[tables["UsageRecords"].table_arn]))
 
         billing_fn = _lambda.Function(self, "BillingFn",
             runtime=_lambda.Runtime.PYTHON_3_12, handler="handler.handler",
             code=_lambda.Code.from_asset("lambdas/billing_service"),
-            environment={"BILLING_RECORDS_TABLE": tables["BillingRecords"].table_name})
+            layers=[tenant_auth_layer],
+            environment={"BILLING_RECORDS_TABLE": tables["BillingRecords"].table_name, **lambda_env})
         billing_fn.add_to_role_policy(iam.PolicyStatement(effect=iam.Effect.ALLOW,
             actions=["dynamodb:Query", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"],
             resources=[tables["BillingRecords"].table_arn]))
@@ -148,14 +181,20 @@ class UnifiedStack(cdk.Stack):
         entitlement_fn = _lambda.Function(self, "EntitlementFn",
             runtime=_lambda.Runtime.PYTHON_3_12, handler="handler.handler",
             code=_lambda.Code.from_asset("lambdas/entitlement_service"),
+            layers=[tenant_auth_layer],
             environment={"ENTITLEMENTS_TABLE": tables["Entitlements"].table_name,
                          "PLAN_CATALOG_TABLE": tables["PlanCatalog"].table_name,
-                         "USAGE_RECORDS_TABLE": tables["UsageRecords"].table_name})
+                         "USAGE_RECORDS_TABLE": tables["UsageRecords"].table_name,
+                         **lambda_env})
         entitlement_fn.add_to_role_policy(iam.PolicyStatement(effect=iam.Effect.ALLOW,
             actions=["dynamodb:Query", "dynamodb:GetItem"],
             resources=[tables["Entitlements"].table_arn, tables["PlanCatalog"].table_arn, tables["UsageRecords"].table_arn]))
         entitlement_fn.add_to_role_policy(iam.PolicyStatement(effect=iam.Effect.ALLOW,
             actions=["dynamodb:Scan"], resources=[tables["PlanCatalog"].table_arn]))
+
+        # The service Lambdas may only verify tenant assertions, never sign them
+        for fn in [usage_fn, billing_fn, entitlement_fn]:
+            tenant_assertion_key.grant(fn, "kms:VerifyMac")
 
         # Allow AgentCore Gateway to invoke Lambdas via resource-based policy
         for fn in [usage_fn, billing_fn, entitlement_fn]:
@@ -181,6 +220,9 @@ class UnifiedStack(cdk.Stack):
         agent_role.add_to_policy(iam.PolicyStatement(sid="AgentCore", effect=iam.Effect.ALLOW,
             actions=["bedrock-agentcore:*"],
             resources=[agentcore_resource_arn]))
+        # Only the agent signs tenant assertions, and only after it has verified the caller.
+        # The Gateway shares this role but never signs.
+        tenant_assertion_key.grant(agent_role, "kms:GenerateMac")
         agent_role.add_to_policy(iam.PolicyStatement(sid="Bedrock", effect=iam.Effect.ALLOW,
             actions=["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
             resources=["arn:aws:bedrock:*::foundation-model/*", f"arn:aws:bedrock:{self.region}:{self.account}:*"]))
@@ -286,7 +328,11 @@ class UnifiedStack(cdk.Stack):
                                 inline_payload=[_tool_def(t) for t in tools])))),
                 credential_provider_configurations=[
                     agentcore.CfnGatewayTarget.CredentialProviderConfigurationProperty(
-                        credential_provider_type="GATEWAY_IAM_ROLE")])
+                        credential_provider_type="GATEWAY_IAM_ROLE")],
+                # Forward only the signed tenant assertion to the Lambda (read from
+                # context.client_context.custom["bedrockAgentCorePropagatedHeaders"]).
+                metadata_configuration=agentcore.CfnGatewayTarget.MetadataConfigurationProperty(
+                    allowed_request_headers=["x-tenant-assertion"]))
 
         # ── 9a. Policy Engine + Cedar Policy + Gateway Attachment ──
         # Step 1: Create Policy Engine
@@ -438,13 +484,16 @@ class UnifiedStack(cdk.Stack):
                     allowed_clients=[frontend_client.user_pool_client_id])),
             lifecycle_configuration=agentcore.CfnRuntime.LifecycleConfigurationProperty(
                 idle_runtime_session_timeout=900, max_lifetime=3600),
+            # Only the caller's access token is forwarded. The agent looks up the tenant from
+            # Cognito with it, so no client-supplied tenant header is accepted.
             request_header_configuration=agentcore.CfnRuntime.RequestHeaderConfigurationProperty(
-                request_header_allowlist=["Authorization", "X-Amzn-Bedrock-AgentCore-Runtime-Custom-Tenant-Id"]),
+                request_header_allowlist=["Authorization"]),
             environment_variables={
                 "AGENTCORE_GATEWAY_URL": gateway.attr_gateway_url,
                 "MEMORY_ID": memory.attr_memory_id,
                 "CODE_INTERPRETER_ID": code_interp.attr_code_interpreter_id,
                 "CREDENTIAL_PROVIDER_NAME": "SaaSBillingCredentialProvider",
+                "TENANT_ASSERTION_KEY_ID": tenant_assertion_key.key_id,
                 "COGNITO_DOMAIN": f"https://saas-billing-{cdk.Aws.ACCOUNT_ID}.auth.{self.region}.amazoncognito.com",
                 "GATEWAY_CLIENT_ID": m2m_client.user_pool_client_id,
                 "GATEWAY_CLIENT_SECRET_ARN": m2m_secret.secret_arn,
@@ -499,6 +548,7 @@ class UnifiedStack(cdk.Stack):
             "BillingServiceFunctionArn": billing_fn.function_arn,
             "EntitlementServiceFunctionArn": entitlement_fn.function_arn,
             "CognitoDomain": f"https://saas-billing-{cdk.Aws.ACCOUNT_ID}.auth.{self.region}.amazoncognito.com",
+            "TenantAssertionKeyId": tenant_assertion_key.key_id,
         }.items():
             cdk.CfnOutput(self, k, value=v)
         for name, tbl in tables.items():

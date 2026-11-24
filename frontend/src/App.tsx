@@ -109,15 +109,17 @@ export async function getAuthToken(): Promise<{ token: string; tenantId: string 
     const idToken = session.tokens?.idToken;
     if (!accessToken) return null;
     const tokenStr = accessToken.toString();
+    // Display only. The browser never sends a tenant to the agent; the agent looks up the
+    // administrator-assigned tenant from Cognito with the access token on every request.
     const tenantId = (idToken?.payload?.["custom:tenant_id"] as string) ?? (idToken?.payload?.["tenant_id"] as string) ?? "unknown";
     return { token: tokenStr, tenantId };
   } catch { return null; }
 }
 
-export async function sendMessageToAgent(message: string, jwtToken: string, tenantId: string, sessionId?: string): Promise<AgentMessage> {
+export async function sendMessageToAgent(message: string, jwtToken: string, sessionId?: string): Promise<AgentMessage> {
   const encodedArn = encodeURIComponent(AGENT_RUNTIME_ARN);
   const url = `${AGENT_RUNTIME_URL}/runtimes/${encodedArn}/invocations?qualifier=DEFAULT`;
-  const headers: Record<string, string> = { "Content-Type": "application/json", Authorization: `Bearer ${jwtToken}`, "X-Amzn-Bedrock-AgentCore-Runtime-Custom-Tenant-Id": tenantId };
+  const headers: Record<string, string> = { "Content-Type": "application/json", Authorization: `Bearer ${jwtToken}` };
   if (sessionId) headers["X-Amzn-Bedrock-AgentCore-Runtime-Session-Id"] = sessionId;
 
   const response = await fetch(url, { method: "POST", headers, body: JSON.stringify({ prompt: message }) });
@@ -252,13 +254,12 @@ const App: React.FC = () => {
     setLoading(true);
     try {
       const tokenInfo = await getAuthToken();
-      const enrichedPrompt = `[Context: tenant_id=${tokenInfo?.tenantId ?? auth.tenantId}] ${text}`;
-      const agentMsg = await sendMessageToAgent(enrichedPrompt, tokenInfo?.token ?? auth.jwtToken, tokenInfo?.tenantId ?? auth.tenantId ?? "unknown", sessionIdRef.current);
+      const agentMsg = await sendMessageToAgent(text, tokenInfo?.token ?? auth.jwtToken, sessionIdRef.current);
       setMessages((prev) => [...prev, agentMsg]);
     } catch (err) {
       setMessages((prev) => [...prev, { role: "agent", content: `Sorry, something went wrong: ${err instanceof Error ? err.message : "Unknown error"}`, timestamp: Date.now() }]);
     } finally { setLoading(false); }
-  }, [auth.jwtToken, auth.tenantId]);
+  }, [auth.jwtToken]);
 
   if (!auth.isAuthenticated) {
     return (

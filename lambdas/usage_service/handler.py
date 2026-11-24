@@ -2,20 +2,29 @@
 
 Provides MCP tools for querying tenant API usage data from the
 UsageRecords DynamoDB table. All queries are scoped by tenant_id
-in the partition key — no Scan operations are used.
+in the partition key — no Scan operations are used. The tenant is taken
+from a signed assertion, never from tool arguments.
 
 Tools:
     get_usage_summary — aggregate usage for a tenant in a given month
     get_usage_by_endpoint — usage breakdown for a specific endpoint
     get_usage_trend — monthly usage array across a date range
+    get_usage_breakdown — usage per endpoint for a month
 """
 
+import logging
 import os
 import re
 from decimal import Decimal
 
 import boto3
 from boto3.dynamodb.conditions import Key
+
+from tenant_auth import TenantAuthError, gateway_tool_name, verified_tenant_id
+
+logger = logging.getLogger(__name__)
+
+_TOOLS = ("get_usage_summary", "get_usage_by_endpoint", "get_usage_trend", "get_usage_breakdown")
 
 _TABLE_NAME = os.environ.get("USAGE_RECORDS_TABLE", "UsageRecords")
 _dynamodb = boto3.resource("dynamodb")
@@ -211,16 +220,24 @@ def get_usage_trend(tenant_id: str, start_month: str, end_month: str) -> dict:
 def handler(event, context):
     """Route incoming MCP Gateway events to the appropriate tool function.
 
-    The Gateway sends just the tool arguments (no tool_name wrapper).
-    We infer the tool from the arguments present.
+    The tenant comes only from the signed assertion that the agent attaches to
+    the Gateway request (see ``tenant_auth``). Any ``tenant_id`` in the event is
+    ignored, so a caller can't choose which tenant's data to read.
+
+    The Gateway sends just the tool arguments, and sets the tool name in the
+    Lambda context. If the context has no tool name, the tool is inferred from
+    the arguments present.
     """
+    try:
+        tenant_id = verified_tenant_id(context)
+    except TenantAuthError as exc:
+        logger.warning("Rejected request: %s", exc)
+        return {"error": "Unauthorized: tenant identity could not be verified", "status": 403}
 
-    tool_name = event.get("tool_name") or event.get("__tool_name__") or event.get("name")
-    params = event.get("parameters", event.get("arguments", {}))
+    params = event if isinstance(event, dict) else {}
 
-    # Gateway sends flat args — use discriminator fields to identify the tool
-    if not tool_name or tool_name not in ("get_usage_summary", "get_usage_by_endpoint", "get_usage_trend", "get_usage_breakdown"):
-        params = event if "tenant_id" in event else params
+    tool_name = gateway_tool_name(context)
+    if tool_name not in _TOOLS:
         if "start_month" in params and "end_month" in params:
             tool_name = "get_usage_trend"
         elif "endpoint" in params:
@@ -229,11 +246,6 @@ def handler(event, context):
             tool_name = "get_usage_breakdown"
         else:
             tool_name = "get_usage_summary"
-
-    try:
-        tenant_id = params["tenant_id"]
-    except KeyError:
-        return {"error": "Missing required parameter: tenant_id", "status": 400}
 
     try:
         if tool_name == "get_usage_summary":

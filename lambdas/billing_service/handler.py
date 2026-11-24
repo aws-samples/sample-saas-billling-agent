@@ -3,7 +3,8 @@
 Provides MCP tools for invoice generation, invoice history, credit
 application, balance queries, and invoice confirmation against the
 BillingRecords DynamoDB table.  All queries are scoped by tenant_id
-in the partition key — no Scan operations are used.
+in the partition key — no Scan operations are used.  The tenant is taken
+from a signed assertion, never from tool arguments.
 
 Tools:
     generate_invoice  — create a draft invoice for a given month
@@ -13,6 +14,7 @@ Tools:
     confirm_invoice   — transition an invoice from draft to sent
 """
 
+import logging
 import os
 import re
 from datetime import datetime, timezone
@@ -20,6 +22,12 @@ from decimal import Decimal
 
 import boto3
 from boto3.dynamodb.conditions import Key
+
+from tenant_auth import TenantAuthError, gateway_tool_name, verified_tenant_id
+
+logger = logging.getLogger(__name__)
+
+_TOOLS = ("generate_invoice", "get_invoice_history", "apply_credit", "get_balance", "confirm_invoice")
 
 _TABLE_NAME = os.environ.get("BILLING_RECORDS_TABLE", "BillingRecords")
 _dynamodb = boto3.resource("dynamodb")
@@ -219,23 +227,27 @@ def confirm_invoice(tenant_id: str, year_month: str) -> dict:
 def handler(event, context):
     """Route incoming MCP Gateway events to the appropriate tool function.
 
-    Expected event shape::
+    The tenant comes only from the signed assertion that the agent attaches to
+    the Gateway request (see ``tenant_auth``). Any ``tenant_id`` in the event is
+    ignored, so a caller can't choose whose invoices to read or change.
 
-        {
-            "tool_name": "generate_invoice",
-            "parameters": {
-                "tenant_id": "tenant-abc",
-                "year_month": "2025-03"
-            }
-        }
+    Expected event shape (the tool arguments, flat)::
+
+        {"year_month": "2025-03"}
+
+    The Gateway sets the tool name in the Lambda context. If the context has no
+    tool name, the tool is inferred from the arguments present.
     """
-    tool_name = event.get("tool_name") or event.get("__tool_name__") or event.get("name")
-    params = event.get("parameters", event.get("arguments", {}))
+    try:
+        tenant_id = verified_tenant_id(context)
+    except TenantAuthError as exc:
+        logger.warning("Rejected request: %s", exc)
+        return {"error": "Unauthorized: tenant identity could not be verified", "status": 403}
 
-    # Gateway sends flat args — use discriminator fields to identify the tool
-    valid_tools = ("generate_invoice", "get_invoice_history", "apply_credit", "get_balance", "confirm_invoice")
-    if not tool_name or tool_name not in valid_tools:
-        params = event if "tenant_id" in event else params
+    params = event if isinstance(event, dict) else {}
+
+    tool_name = gateway_tool_name(context)
+    if tool_name not in _TOOLS:
         if "amount_cents" in params:
             tool_name = "apply_credit"
         elif params.get("confirm") and "year_month" in params:
@@ -248,11 +260,6 @@ def handler(event, context):
             tool_name = "generate_invoice"
         else:
             tool_name = "get_balance"
-
-    try:
-        tenant_id = params["tenant_id"]
-    except KeyError:
-        return {"error": "Missing required parameter: tenant_id", "status": 400}
 
     try:
         if tool_name == "generate_invoice":
